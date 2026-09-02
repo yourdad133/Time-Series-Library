@@ -4,9 +4,9 @@ Date: 2026-09-02
 
 ## Final Status
 
-`FAIL_RUNTIME`
+`PASS`
 
-The smoke test failed before data loading and before the first training epoch. No model implementation, data loading logic, experiment code, dependencies, or training parameters were changed.
+Attempt 2 passed after setting UTF-8 output handling in the current PowerShell process. The model, data loading logic, experiment code, dependencies, and training parameters were not modified.
 
 ## Target
 
@@ -22,14 +22,69 @@ The smoke test failed before data loading and before the first training epoch. N
 
 - Branch: `codex/timemixer-ettm1-reproduction`
 - Data exists: `./dataset/ETT-small/ETTm1.csv`
-- Git commit before run: `e3bb0697c6e0a8c2bdb527576972cbd5437197b6`
-- Worktree status before run: clean
+- Git commit before Attempt 1: `e3bb0697c6e0a8c2bdb527576972cbd5437197b6`
+- Git commit before Attempt 2: `8a549e72abc411cce0b95170e5258e7f28104ae2`
+- Worktree status before Attempt 2: clean
+- The interpreter path written without the separator before `.conda` was checked and did not exist locally.
+- The existing TSLib Conda interpreter under the user Conda environment was used explicitly. Anaconda base Python was not used.
+
+## Runtime Environment
+
+- Python executable: `<user-home>\.conda\envs\tslib\python.exe`
+- Python: `3.11.16 | packaged by Anaconda, Inc. | MSC v.1942 64 bit (AMD64)`
+- PyTorch: `2.6.0+cu124`
+- `torch.cuda.is_available()`: `true`
+- `torch.version.cuda`: `12.4`
+- `torch.backends.cudnn.version()`: `90100`
+- GPU 0: `NVIDIA GeForce RTX 3050 Ti Laptop GPU`
+- GPU total memory: `4095 MiB` by PyTorch, `4096 MiB` by `nvidia-smi`
+
+## Attempt 1: FAIL_RUNTIME
+
+Attempt 1 failed before data loading and before the first training epoch.
+
+- Final status: `FAIL_RUNTIME`
 - Recorded start time: `2026-09-02T13:01:41.0496332+08:00`
 - Recorded end time: `2026-09-02T13:02:48.5766537+08:00`
-- Recorded attempt window: approximately `67.53 seconds`
 - Training process duration: approximately `4.31 seconds`
+- MSE / MAE: not available
 
-## Command
+Cause:
+
+- Windows PowerShell used GBK output encoding.
+- `exp/exp_basic.py` printed a rocket emoji during lazy model loading.
+- The console could not encode the emoji and raised:
+
+```text
+UnicodeEncodeError: 'gbk' codec can't encode character '\U0001f680' in position 0: illegal multibyte sequence
+```
+
+Attempt 1 confirmed the entry point selected `cuda:0` before failing, but it did not reach data loading, training, validation, or testing.
+
+## Attempt 2: PASS
+
+Attempt 2 kept the same model, data, and training parameters as Attempt 1. Only the current PowerShell process output environment was changed to UTF-8 before launching `run.py`.
+
+### UTF-8 Setup
+
+The following settings were applied in the same PowerShell process before running the smoke command:
+
+```powershell
+chcp 65001 | Out-Null
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new()
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+```
+
+Encoding verification succeeded before training:
+
+```text
+stdout encoding: utf-8
+🚀 UTF-8 test passed
+```
+
+### Command
 
 Executed from the project root with the TSLib Conda interpreter. The local user-home prefix is redacted in this committed report.
 
@@ -62,30 +117,16 @@ Executed from the project root with the TSLib Conda interpreter. The local user-
   --down_sampling_window 2
 ```
 
-## Runtime Environment
+### Timing
 
-The interpreter path provided without the separator before `.conda` was checked and does not exist locally. The run used the existing TSLib Conda interpreter under the user Conda environment, not Anaconda base Python.
+- Attempt 2 start time: `2026-09-02T13:10:37.5810135+08:00`
+- Attempt 2 end time: `2026-09-02T13:14:21.4679369+08:00`
+- Total wall-clock runtime: approximately `223.89 seconds`
+- Epoch 1 training phase time reported by the script: `79.13863563537598 seconds`
 
-- Python executable: `<user-home>\.conda\envs\tslib\python.exe`
-- Python: `3.11.16 | packaged by Anaconda, Inc. | MSC v.1942 64 bit (AMD64)`
-- PyTorch: `2.6.0+cu124`
-- `torch.cuda.is_available()`: `true`
-- `torch.version.cuda`: `12.4`
-- `torch.backends.cudnn.version()`: `90100`
-- GPU 0: `NVIDIA GeForce RTX 3050 Ti Laptop GPU`
-- GPU total memory: `4095 MiB` by PyTorch, `4096 MiB` by `nvidia-smi`
+### Actual Parameters
 
-CUDA compute was previously confirmed in this environment with a `512 x 512` CUDA matrix multiplication on `cuda:0`, producing finite results.
-
-Observed GPU memory:
-
-- Before run: `0 MiB / 4096 MiB`
-- After run: `0 MiB / 4096 MiB`
-- Peak memory during the short failed run was not accurately captured. The run failed before model construction completed, so these before/after snapshots do not represent training memory use.
-
-## Actual Parameters Reached
-
-`run.py` parsed and printed the following relevant parameters before failing:
+`run.py` parsed and printed the following relevant parameters:
 
 - `task_name`: `long_term_forecast`
 - `is_training`: `1`
@@ -131,70 +172,61 @@ Observed GPU memory:
 - `down_sampling_method`: `avg`
 - `down_sampling_window`: `2`
 
-The process printed `Using GPU` and `Use GPU: cuda:0`, so the entry point selected `cuda:0` before the runtime failure.
+The process printed `Using GPU` and `Use GPU: cuda:0`, confirming the run selected `cuda:0`.
 
-## Dataset Split Counts
+### Dataset Split Counts
 
-Not reached.
+Observed from the run output:
 
-The failure occurred during experiment/model construction, before `_get_data(flag='train')`, `_get_data(flag='val')`, or `_get_data(flag='test')` was called. Therefore the train, validation, and test sample counts were not printed by this run.
-
-Expected ETTm1 dataset lengths for this configuration, based on the repository data split formula and `seq_len=96`, `pred_len=96`, are:
-
-- train: `34465`
+- train: `34369`
 - validation: `11425`
-- test: `11425`
+- test before training: `11425`
+- test during final testing: `11425`
 
-These are calculated from the code path but were not observed from the failed smoke run output.
+### Losses and Metrics
 
-## Metrics
+Epoch summary:
 
-Not available.
+- Steps: `2149`
+- Train Loss: `0.2956966`
+- Validation Loss: `0.4267094`
+- Test Loss during validation pass: `0.3645226`
 
-- Epoch training loss: not reached
-- Validation loss: not reached
-- Test MSE: not reached
-- Test MAE: not reached
+Final test metrics:
 
-## Error
+- Test MSE: `0.3647920787334442`
+- Test MAE: `0.3872981071472168`
+- DTW: `Not calculated`
 
-Failure type: runtime error.
+Output shapes:
 
-The process failed while constructing `Exp_Long_Term_Forecast`, before model construction completed and before data loading or training.
+- predictions: `(11425, 96, 7)`
+- ground truth: `(11425, 96, 7)`
 
-Relevant traceback:
+### GPU Memory Observations
 
-```text
-Traceback (most recent call last):
-  File "<repo>\run.py", line 205, in <module>
-    exp = Exp(args)  # set experiments
-  File "<repo>\exp\exp_long_term_forecasting.py", line 20, in __init__
-    super(Exp_Long_Term_Forecast, self).__init__(args)
-  File "<repo>\exp\exp_basic.py", line 23, in __init__
-    self.model = self._build_model().to(self.device)
-  File "<repo>\exp\exp_long_term_forecasting.py", line 23, in _build_model
-    model = self.model_dict[self.args.model](self.args).float()
-  File "<repo>\exp\exp_basic.py", line 96, in __getitem__
-    print(f"\U0001f680 Lazy Loading: {key} ...")
-UnicodeEncodeError: 'gbk' codec can't encode character '\U0001f680' in position 0: illegal multibyte sequence
-```
+Available snapshots:
 
-Cause:
+- During early training: `83 MiB / 4096 MiB`
+- During later training / validation: `189 MiB / 4096 MiB`
+- After completion: `0 MiB / 4096 MiB`
 
-- The Windows PowerShell console encoding used by this run could not encode the rocket emoji printed by `LazyModelDict.__getitem__` in `exp/exp_basic.py`.
-- This is not a CUDA OOM.
-- This is not a missing dependency.
-- This is not a TimeMixer model logic failure.
-- It is a console output encoding failure triggered before the model class was returned by lazy loading.
+These are sampled `nvidia-smi` observations, not a precise peak-memory trace.
 
 ## Generated Files
 
-No checkpoint, result, test result, model weight, or full console log is being committed.
+The smoke test generated local artifacts in Git-ignored paths, including:
 
-`git status` after the failed run showed no tracked or untracked changes before this `SMOKE_TEST.md` report was created, indicating the run did not leave visible Git-managed artifacts at that point.
+- `checkpoints/long_term_forecast_ETTm1_96_96_smoke_TimeMixer_ETTm1_ftM_sl96_ll0_pl96_dm16_nh8_el2_dl1_df32_expand2_dc4_fc1_ebtimeF_dtTrue_Smoke_0/checkpoint.pth`
+- `results/long_term_forecast_ETTm1_96_96_smoke_TimeMixer_ETTm1_ftM_sl96_ll0_pl96_dm16_nh8_el2_dl1_df32_expand2_dc4_fc1_ebtimeF_dtTrue_Smoke_0/`
+- `test_results/long_term_forecast_ETTm1_96_96_smoke_TimeMixer_ETTm1_ftM_sl96_ll0_pl96_dm16_nh8_el2_dl1_df32_expand2_dc4_fc1_ebtimeF_dtTrue_Smoke_0/`
+- `result_long_term_forecast.txt`
+- Python `__pycache__` files
+
+These files are local run artifacts and are not committed.
+
+Plain `git status --short --branch` after the successful smoke run was clean before this report update, confirming only ignored run artifacts were produced.
 
 ## Recommendation
 
-Do not proceed to the full reproduction run until the smoke test can pass.
-
-The next smoke attempt should use the same model and data parameters, but the execution environment must ensure UTF-8-capable console output before calling `run.py`. This report does not change code or retry with environment changes because the instruction for non-OOM runtime errors was to record the error and stop.
+The UTF-8 retry passed. There is no newly confirmed blocker for proceeding from the minimal smoke test to the planned TimeMixer ETTm1 reproduction workflow.
